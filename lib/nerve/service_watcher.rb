@@ -1,6 +1,7 @@
 require 'nerve/service_watcher/tcp'
 require 'nerve/service_watcher/http'
 require 'nerve/service_watcher/rabbitmq'
+require 'nerve/service_watcher/file'
 
 module Nerve
   class ServiceWatcher
@@ -27,6 +28,7 @@ module Nerve
         # checks inherit attributes from the service overall
         check['host'] ||= service['host']
         check['port'] ||= service['port']
+        check['backup'] ||= service['backup']
 
         # generate a nice readable name for each check
         check['name'] ||= "#{@name} #{check['type']}-#{check['host']}:#{check['port']}"

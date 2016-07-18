@@ -41,6 +41,13 @@ class Nerve::Reporter
         end
       end
 
+      if service.has_key?('backup')
+        read = File.read(service['backup'])
+        j = JSON.parse(read)
+        log.info "read data from backup json config file"
+        d['backup'] = j
+      end
+
       if service.has_key?('haproxy_server_options')
         d['haproxy_server_options'] = service['haproxy_server_options']
       end
