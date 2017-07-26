@@ -8,6 +8,8 @@ module Nerve
     include Utils
     include Logging
 
+    attr_reader :was_up
+
     def initialize(service={})
       log.debug "nerve: creating service watcher object"
 
@@ -18,7 +20,7 @@ module Nerve
 
       @name = service['name']
 
-      # configure the reporter, which we use for talking to zookeeper
+      # configure the reporter, which we use for reporting status to the registry 
       @reporter = Reporter.new_from_service(service)
 
       # instantiate the checks for this service
@@ -59,32 +61,57 @@ module Nerve
       # force an initial report on startup
       @was_up = nil
 
+      # when this watcher is started it will store the
+      # thread here
+      @run_thread = nil
+      @should_finish = false
+
       log.debug "nerve: created service watcher for #{@name} with #{@service_checks.size} checks"
+    end
+
+    def start()
+      unless @run_thread
+        @run_thread = Thread.new { self.run() }
+      else
+        log.error "nerve: tried to double start a watcher"
+      end
+    end
+
+    def stop()
+      log.info "nerve: stopping service watch #{@name}"
+      @should_finish = true
+      return true if @run_thread.nil?
+
+      unclean_shutdown = @run_thread.join(10).nil?
+      if unclean_shutdown
+        log.error "nerve: unclean shutdown of #{@name}, killing thread"
+        Thread.kill(@run_thread)
+      end
+      @run_thread = nil
+      !unclean_shutdown
+    end
+
+    def alive?()
+      !@run_thread.nil? && @run_thread.alive?
     end
 
     def run()
       log.info "nerve: starting service watch #{@name}"
-
       @reporter.start()
 
-      until $EXIT
+      until watcher_should_exit?
         check_and_report
 
         # wait to run more checks but make sure to exit if $EXIT
         # we avoid sleeping for the entire check interval at once
         # so that nerve can exit promptly if required
-        nap_time = @check_interval
-        while nap_time > 0
-          break if $EXIT
-          sleep [nap_time, 1].min
-          nap_time -= 1
-        end
+        responsive_sleep (@check_interval) { watcher_should_exit? }
       end
     rescue StandardError => e
       log.error "nerve: error in service watcher #{@name}: #{e.inspect}"
       raise e
     ensure
-      log.info "nerve: ending service watch #{@name}"
+      log.info "nerve: stopping reporter for #{@name}"
       @reporter.stop
     end
 
@@ -117,5 +144,11 @@ module Nerve
       end
       return true
     end
+
+    private
+    def watcher_should_exit?
+      $EXIT || @should_finish
+    end
+
   end
 end
